@@ -54,7 +54,7 @@ function _M.rewrite(conf, ctx)
         end
     end
     core.log.warn("token:",token, "\n")
-    local uri = "test"
+    local uri = "test/"
     core.log.warn("check cas uri:",uri, "\n")
     local timeout = 1000 * 2
     local res,err = http_req("GET", uri, nil, nil, timeout)
