@@ -64,7 +64,7 @@ local function fetch_valid_cache(lru_obj, invalid_stale, item_ttl,
     return nil
 end
 
-
+-- 返回创建 LRU 的匿名函数
 local function new_lru_fun(opts)
     local item_count, item_ttl
     if opts and opts.type == 'plugin' then
@@ -81,6 +81,7 @@ local function new_lru_fun(opts)
     local lru_obj = lru_new(item_count)
 
     return function (key, version, create_obj_fun, ...)
+        -- 不支持的 yielding 的 Nginx phase 无法使用 resty.lock
         if not serial_creating or not can_yield_phases[get_phase()] then
             local cache_obj = fetch_valid_cache(lru_obj, invalid_stale,
                                 item_ttl, item_release, key, version)
@@ -102,6 +103,8 @@ local function new_lru_fun(opts)
             return cache_obj.val
         end
 
+        -- 当缓存失效时获取锁
+        -- 创建共享内存 lock
         local lock, err = resty_lock:new(lock_shdict_name)
         if not lock then
             return nil, "failed to create lock: " .. err
@@ -110,11 +113,13 @@ local function new_lru_fun(opts)
         local key_s = tostring(key)
         log.info("try to lock with key ", key_s)
 
+        -- 获取 lock
         local elapsed, err = lock:lock(key_s)
         if not elapsed then
             return nil, "failed to acquire the lock: " .. err
         end
 
+        -- 再次获取缓存
         cache_obj = fetch_valid_cache(lru_obj, invalid_stale, item_ttl,
                         nil, key, version)
         if cache_obj then

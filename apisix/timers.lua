@@ -38,7 +38,7 @@ local function background_timer()
     for name, timer in pairs(timers) do
         core.log.info("run timer[", name, "]")
 
-        local th, err = thread_spawn(timer)
+        local th, err = thread_spawn(timer)--开启协程
         if not th then
             core.log.error("failed to spawn thread for timer [", name, "]: ", err)
             goto continue
@@ -65,7 +65,7 @@ function _M.init_worker()
     local opts = {
         each_ttl = 0,
         sleep_succ = 0,
-        check_interval = check_interval,
+        check_interval = check_interval,--默认1秒间隔
     }
     local timer, err = core.timer.new("background", background_timer, opts)
     if not timer then

@@ -26,7 +26,7 @@ local ipairs  = ipairs
 
 local _M = {version = 0.3}
 
-
+--解析upstream
 local function filter(route)
     route.orig_modifiedIndex = route.modifiedIndex
     route.update_count = 0
@@ -52,7 +52,7 @@ end
 
 -- attach common methods if the router doesn't provide its custom implementation
 local function attach_http_router_common_methods(http_router)
-    if http_router.routes == nil then
+    if http_router.routes == nil then       --返回init_worker()所拉取的全部路由信息（路由数据及其版本）
         http_router.routes = function ()
             if not http_router.user_routes then
                 return nil, nil
@@ -82,9 +82,9 @@ function _M.http_init_worker()
     end
 
     local router_http = require("apisix.http.router." .. router_http_name)
-    attach_http_router_common_methods(router_http)
-    router_http.init_worker(filter)
-    _M.router_http = router_http
+    attach_http_router_common_methods(router_http)  -- radixtree_uri绑定两个默认方法  init_worker 和routes
+    router_http.init_worker(filter)  --拉取路由信息
+    _M.router_http = router_http    --user_routes保存在router_http，后续请求进来在access阶段匹配 router.router_http.match(api_ctx)
 
     local router_ssl = require("apisix.ssl.router." .. router_ssl_name)
     router_ssl.init_worker()

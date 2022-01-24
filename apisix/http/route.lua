@@ -71,6 +71,7 @@ function _M.create_radixtree_uri_router(routes, uri_routes, with_parameter)
 
             core.log.info("insert uri route: ",
                           core.json.delay_encode(route.value, true))
+            --插入一条新建的路由
             core.table.insert(uri_routes, {
                 paths = route.value.uris or route.value.uri,
                 methods = route.value.methods,
@@ -80,6 +81,7 @@ function _M.create_radixtree_uri_router(routes, uri_routes, with_parameter)
                                or route.value.remote_addr,
                 vars = route.value.vars,
                 filter_fun = filter_fun,
+                -- 路由匹配成功之后的回调函数，在lua-resty-radixtree  radixtree.lua dispatch函数末尾执行
                 handler = function (api_ctx, match_opts)
                     api_ctx.matched_params = nil
                     api_ctx.matched_route = route
@@ -109,7 +111,7 @@ function _M.match_uri(uri_router, match_opts, api_ctx)
     match_opts.vars = api_ctx.var
     match_opts.matched = core.tablepool.fetch("matched_route_record", 0, 4)
 
-    local ok = uri_router:dispatch(api_ctx.var.uri, match_opts, api_ctx, match_opts)
+    local ok = uri_router:dispatch(api_ctx.var.uri, match_opts, api_ctx, match_opts)   --lua-resty-radixtree的redixtree.lua
     return ok
 end
 
@@ -132,7 +134,7 @@ local function check_route(route)
 end
 
 
-function _M.init_worker(filter)
+function _M.init_worker(filter)    --通过config_etcd.lua的new函数拉取存在etcd中的 /route目录下的路由信息，赋值给user_routes
     local user_routes, err = core.config.new("/routes", {
             automatic = true,
             item_schema = core.schema.route,

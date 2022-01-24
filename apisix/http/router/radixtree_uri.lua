@@ -28,14 +28,14 @@ local _M = {version = 0.2}
     local uri_routes = {}
     local uri_router
     local match_opts = {}
-function _M.match(api_ctx)
-    local user_routes = _M.user_routes
+function _M.match(api_ctx)      --任意一条路由变化，会引起全部路由更新
+    local user_routes = _M.user_routes   --从etcd读取,config_etcd 自动更新，是动态变化的
     local _, service_version = get_services()
-    if not cached_router_version or cached_router_version ~= user_routes.conf_version
+    if not cached_router_version or cached_router_version ~= user_routes.conf_version  --如果缓存版本不一致
         or not cached_service_version or cached_service_version ~= service_version
     then
         uri_router = base_router.create_radixtree_uri_router(user_routes.values,
-                                                             uri_routes, false)
+                                                             uri_routes, false)    --重建路由
         cached_router_version = user_routes.conf_version
         cached_service_version = service_version
     end

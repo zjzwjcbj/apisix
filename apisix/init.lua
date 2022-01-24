@@ -71,11 +71,21 @@ local _M = {version = 0.4}
 
 
 function _M.http_init(args)
+    require("resty.core")
+
+    if require("ffi").os == "Linux" then
+        require("ngx.re").opt("jit_stack_size", 200 * 1024)
+    end
+    --Jit参数设置
+    require("jit.opt").start("minstitch=2", "maxtrace=4000",
+                             "maxrecord=8000", "sizemcode=64",
+                             "maxmcode=4000", "maxirconst=1000")
+
     core.resolver.init_resolver(args)
-    core.id.init()
+    core.id.init()        --生成节点id
 
     local process = require("ngx.process")
-    local ok, err = process.enable_privileged_agent()
+    local ok, err = process.enable_privileged_agent() --开启agent进程
     if not ok then
         core.log.error("failed to enable privileged_agent: ", err)
     end
@@ -104,7 +114,7 @@ function _M.http_init_worker()
     if not ok then
         error("failed to init worker event: " .. err)
     end
-    local discovery = require("apisix.discovery.init").discovery
+    local discovery = require("apisix.discovery.init").discovery    --服务发现
     if discovery and discovery.init_worker then
         discovery.init_worker()
     end
@@ -112,22 +122,22 @@ function _M.http_init_worker()
     load_balancer = require("apisix.balancer")
     require("apisix.admin.init").init_worker()
 
-    require("apisix.timers").init_worker()
+    require("apisix.timers").init_worker()--并发执行后台任务
 
     require("apisix.debug").init_worker()
 
-    plugin.init_worker()
-    router.http_init_worker()
-    require("apisix.http.service").init_worker()
-    plugin_config.init_worker()
-    require("apisix.consumer").init_worker()
+    plugin.init_worker()   -- 插件初始化
+    router.http_init_worker()   --路由初始化
+    require("apisix.http.service").init_worker()  --services初始化
+    plugin_config.init_worker()   --插件配置初始化
+    require("apisix.consumer").init_worker()   -- consumer 初始化
 
     if core.config == require("apisix.core.config_yaml") then
         core.config.init_worker()
     end
 
-    apisix_upstream.init_worker()
-    require("apisix.plugins.ext-plugin.init").init_worker()
+    apisix_upstream.init_worker()     -- upstreams 加载
+    require("apisix.plugins.ext-plugin.init").init_worker() --第三方插件初始化
 
     local_conf = core.config.local_conf()
 
@@ -291,7 +301,7 @@ local function get_upstream_by_id(up_id)
 
         if upstream.has_domain then
             local err
-            upstream, err = parse_domain_in_up(upstream)
+            upstream, err = parse_domain_in_up(upstream)    --域名解析
             if err then
                 core.log.error("failed to get resolved upstream: ", err)
                 if is_http then
@@ -373,7 +383,7 @@ function _M.http_access_phase()
     api_ctx.var.real_request_uri = api_ctx.var.request_uri
     api_ctx.var.request_uri = api_ctx.var.uri .. api_ctx.var.is_args .. (api_ctx.var.args or "")
 
-    if router.api.has_route_not_under_apisix() or
+    if router.api.has_route_not_under_apisix() or --默认为true,遍历本地插件列表,是否有提供api,且不为/apisix前缀 则为true
         core.string.has_prefix(uri, "/apisix/")
     then
         local skip = local_conf and local_conf.apisix.global_rule_skip_internal_api
@@ -383,11 +393,11 @@ function _M.http_access_phase()
         end
     end
 
-    router.router_http.match(api_ctx)
+    router.router_http.match(api_ctx)   --路由匹配
 
     local route = api_ctx.matched_route
     if not route then
-        -- run global rule
+        -- run global rule   全局路由
         plugin.run_global_rules(api_ctx, router.global_rules, nil)
 
         core.log.info("not find any matched route")
@@ -419,7 +429,7 @@ function _M.http_access_phase()
             return core.response.exit(404)
         end
 
-        route = plugin.merge_service_route(service, route)
+        route = plugin.merge_service_route(service, route)   --合并route的service相同的配置，route的配置覆盖service的配置
         api_ctx.matched_route = route
         api_ctx.conf_type = "route&service"
         api_ctx.conf_version = route.modifiedIndex .. "&" .. service.modifiedIndex
@@ -447,11 +457,11 @@ function _M.http_access_phase()
         script.run("access", api_ctx)
 
     else
-        local plugins = plugin.filter(api_ctx, route)
+        local plugins = plugin.filter(api_ctx, route)    --插件过滤
         api_ctx.plugins = plugins
 
-        plugin.run_plugin("rewrite", plugins, api_ctx)
-        if api_ctx.consumer then
+        plugin.run_plugin("rewrite", plugins, api_ctx)  --执行插件
+        if api_ctx.consumer then    --每个插件的rewrite阶段consumer_mod.attach_consumer 赋值给ctx
             local changed
             route, changed = plugin.merge_consumer_route(
                 route,
@@ -505,6 +515,7 @@ function _M.http_access_phase()
                                    or route_val.upstream
     end
 
+    -- websocket 特殊处理
     if enable_websocket then
         api_ctx.var.upstream_upgrade    = api_ctx.var.http_upgrade
         api_ctx.var.upstream_connection = api_ctx.var.http_connection
@@ -515,12 +526,14 @@ function _M.http_access_phase()
         api_ctx.upstream_scheme = "grpc"
     end
 
+    -- 获取 upstream 节点
     local code, err = set_upstream(route, api_ctx)
     if code then
         core.log.error("failed to set upstream: ", err)
         core.response.exit(code)
     end
 
+    -- 负载均衡
     local server, err = load_balancer.pick_server(route, api_ctx)
     if not server then
         core.log.error("failed to pick server: ", err)

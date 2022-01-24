@@ -226,7 +226,7 @@ local function pick_server(route, ctx)
     local server_picker = ctx.server_picker
     if not server_picker then
         server_picker = lrucache_server_picker(key, version,
-                                               create_server_picker, up_conf, checker)
+                                               create_server_picker, up_conf, checker)   --负载type
     end
     if not server_picker then
         return nil, "failed to fetch server picker"

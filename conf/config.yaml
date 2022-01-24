@@ -45,3 +45,17 @@ apisix:
     - name: admin
       key: edd1c9f034335f136f87ad84b625c8f1  # using fixed API token has security risk, please update it when you deploy to production environment
       role: admin
+
+
+
+
+nohup java -jar -DAPISIX_LISTEN_ADDRESS=unix:/tmp/runner.sock -DAPISIX_CONF_EXPIRE_TIME=3600 /usr/local/apisix-java-plugin-runner.jar &
+
+
+ext-plugin:
+  cmd: ['nohup', 'java', '-jar', '-Xmx2g', '-Xms2g', '/usr/local/apisix-java-plugin-runner.jar','&']
+
+
+
+
+

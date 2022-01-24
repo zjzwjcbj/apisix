@@ -199,7 +199,7 @@ local function load_full_data(self, dir_res, headers)
             self.values_hash[self.key] = #self.values
 
             item.clean_handlers = {}
-
+            --执行回调
             if self.filter then
                 self.filter(item)
             end
@@ -304,7 +304,7 @@ local function sync_data(self)
         if not dir_res then
             return false, err
         end
-
+        --删除旧数据
         if self.values then
             for i, val in ipairs(self.values) do
                 if val and val.clean_handlers then
@@ -318,12 +318,12 @@ local function sync_data(self)
             self.values = nil
             self.values_hash = nil
         end
-
+        --赋值新数据
         load_full_data(self, dir_res, headers)
 
         return true
     end
-
+    --目录已加载则监听变化
     local dir_res, err = waitdir(self.etcd_cli, self.key, self.prev_index + 1, self.timeout)
     log.info("waitdir key: ", self.key, " prev_index: ", self.prev_index + 1)
     log.info("res: ", json.delay_encode(dir_res, true))
@@ -333,7 +333,7 @@ local function sync_data(self)
             self.need_reload = true
             log.warn("waitdir [", self.key, "] err: ", err,
                      ", will read the configuration again via readdir")
-            return false
+            return false      --这里没有返回err，使得函数 _automatic_fetch 调用当前函数时，睡眠时间更短
         end
 
         return false, err
@@ -359,6 +359,7 @@ local function sync_data(self)
             key = short_key(self, res.key)
         end
 
+        -- 校验value的类型合法性
         if res.value and not self.single_item and type(res.value) ~= "table" then
             self:upgrade_version(res.modifiedIndex)
             return false, "invalid item data of [" .. self.key .. "/" .. key
@@ -366,6 +367,7 @@ local function sync_data(self)
                             .. ", it should be an object"
         end
 
+        --校验 schema
         if res.value and self.item_schema then
             local ok, err = check_schema(self.item_schema, res.value)
             if not ok then
@@ -396,8 +398,11 @@ local function sync_data(self)
             return false
         end
 
+        -- 将value 、key更新到self.values, self.values_hash
+        -- values_hash是一个哈希表，根据key找到key在self.values数组里的下标
         local pre_index = self.values_hash[key]
         if pre_index then
+            -- 获得当前key的下标，取出key上一个版本的取值，执行销毁
             local pre_val = self.values[pre_index]
             if pre_val and pre_val.clean_handlers then
                 for _, clean_handler in ipairs(pre_val.clean_handlers) do
@@ -406,6 +411,7 @@ local function sync_data(self)
                 pre_val.clean_handlers = nil
             end
 
+            -- 如果当前key有新值，则覆盖原来取值，设置value的clean_handlers为空
             if res.value then
                 if not self.single_item then
                     res.value.id = key
@@ -422,7 +428,7 @@ local function sync_data(self)
                 log.info("delete data by key: ", key)
             end
 
-        elseif res.value then
+        elseif res.value then     -- 如果key是新增的，则直接插入
             res.clean_handlers = {}
             insert_tab(self.values, res)
             self.values_hash[key] = #self.values
@@ -433,6 +439,7 @@ local function sync_data(self)
             log.info("insert data by key: ", key)
         end
 
+        -- 如果删除次数大于100次，则重建数组self.values和字典self.values_hash
         -- avoid space waste
         if self.sync_times > 100 then
             local values_original = table.clone(self.values)
@@ -464,7 +471,7 @@ local function sync_data(self)
 
         self.conf_version = self.conf_version + 1
     end
-
+    log.warn("--------test--------"..self.key)
     return self.values
 end
 
@@ -536,7 +543,7 @@ local function _automatic_fetch(premature, self)
 
         local ok, err = xpcall(function()
             if not self.etcd_cli then
-                local etcd_cli, err = get_etcd()
+                local etcd_cli, err = get_etcd()        --获取etcd客户端
                 if not etcd_cli then
                     error("failed to create etcd instance for key ["
                           .. self.key .. "]: " .. (err or "unknown"))
@@ -544,7 +551,7 @@ local function _automatic_fetch(premature, self)
                 self.etcd_cli = etcd_cli
             end
 
-            local ok, err = sync_data(self)
+            local ok, err = sync_data(self)             --同步数据
             if err then
                 if string.find(err, err_etcd_unhealthy_all) then
                     local reconnected = false
@@ -600,6 +607,11 @@ local function _automatic_fetch(premature, self)
     end
 end
 
+
+--    a. 创建 router 等key
+--    b. 挂载 filter 回调函数
+--    c. 数据格式化
+--    d. timer watch etcd 事件变化执行回调
 
 function _M.new(key, opts)
     local local_conf, err = config_local.local_conf()
@@ -662,7 +674,7 @@ function _M.new(key, opts)
             load_full_data(obj, dir_res, headers)
         end
 
-        ngx_timer_at(0, _automatic_fetch, obj)
+        ngx_timer_at(0, _automatic_fetch, obj)   --注册自动更新定时器
 
     else
         local etcd_cli, err = get_etcd()
@@ -718,7 +730,7 @@ function _M.server_version(self)
     return read_etcd_version(self.etcd_cli)
 end
 
-
+--format hook 函数
 local function create_formatter(prefix)
     return function (res)
         res.body.nodes = {}
@@ -763,7 +775,6 @@ local function create_formatter(prefix)
                     curr_key = item.key
                 end
             end
-
             ::CONTINUE::
         end
 
@@ -789,7 +800,7 @@ function _M.init()
 
     local etcd_conf = local_conf.etcd
     local prefix = etcd_conf.prefix
-    local res, err = readdir(etcd_cli, prefix, create_formatter(prefix))
+    local res, err = readdir(etcd_cli, prefix, create_formatter(prefix)) --从etcd中读取目录内容并通过formatter进行格式化
     if not res then
         return nil, err
     end

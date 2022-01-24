@@ -148,7 +148,7 @@ end
 
 function _M.init(env, args)
     -- read_yaml_conf
-    local yaml_conf, err = file.read_yaml_conf(env.apisix_home)
+    local yaml_conf, err = file.read_yaml_conf(env.apisix_home)--合并之后的conf
     if not yaml_conf then
         util.die("failed to read local yaml config of apisix: ", err)
     end
@@ -248,7 +248,7 @@ function _M.init(env, args)
         local user = yaml_conf.etcd.user
         local password = yaml_conf.etcd.password
         if user and password then
-            local auth_url = host .. "/v3/auth/authenticate"
+            local auth_url = host .. "/v3/auth/authenticate"   --获取etcd令牌
             local json_auth = {
                 name =  etcd_conf.user,
                 password = etcd_conf.password

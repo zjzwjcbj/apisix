@@ -16,6 +16,7 @@
 --
 local core = require("apisix.core")
 local ext = require("apisix.plugins.ext-plugin.init")
+local log          = require("apisix.core.log")
 
 
 local name = "ext-plugin-pre-req"
@@ -33,7 +34,20 @@ end
 
 
 function _M.rewrite(conf, ctx)
-    return ext.communicate(conf, ctx, name)
+    ngx.update_time()
+    log.warn("luaStart-------"..ngx.now())
+    core.request.set_header(ctx, "lua-start", ngx.now())
+    local code = ext.communicate(conf, ctx, name)
+    local s = core.request.header(ctx,"java-end")
+    log.warn("javaEnd-----"..s)
+    ngx.update_time()
+    local luaend = ngx.now()
+    log.warn("luaend-------"..luaend)
+    local lauEnd = ngx.re.sub(luaend,"\\.","")
+    log.warn("luaEnd-------"..lauEnd)
+    local endRPCCos = lauEnd - s
+    log.warn("endRPCCos---"..endRPCCos)
+    return code
 end
 
 

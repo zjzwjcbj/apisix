@@ -80,12 +80,12 @@ local function unload_plugin(name, plugin_type)
     if plugin_type == PLUGIN_TYPE_STREAM then
         pkg_name = "apisix.stream.plugins." .. name
     end
-
+    -- 执行销毁
     local old_plugin = pkg_loaded[pkg_name]
     if old_plugin and type(old_plugin.destroy) == "function" then
         old_plugin.destroy()
     end
-
+    -- 从 lua 全局包中移除
     pkg_loaded[pkg_name] = nil
 end
 
@@ -97,11 +97,11 @@ local function load_plugin(name, plugins_list, plugin_type)
         ok, plugin = wasm.require(name)
         name = name.name
     else
-        local pkg_name = "apisix.plugins." .. name
+        local pkg_name = "apisix.plugins." .. name     --构建插件 lua 包名
         if plugin_type == PLUGIN_TYPE_STREAM then
             pkg_name = "apisix.stream.plugins." .. name
         end
-
+        --调用 require 加载包, pcall 包裹异常
         ok, plugin = pcall(require, pkg_name)
     end
 
@@ -109,18 +109,18 @@ local function load_plugin(name, plugins_list, plugin_type)
         core.log.error("failed to load plugin [", name, "] err: ", plugin)
         return
     end
-
+    -- 插件必须有优先级
     if not plugin.priority then
         core.log.error("invalid plugin [", name,
                         "], missing field: priority")
         return
     end
-
+    -- 插件必须有version
     if not plugin.version then
         core.log.error("invalid plugin [", name, "] missing field: version")
         return
     end
-
+    -- 插件必须有schema
     if type(plugin.schema) ~= "table" then
         core.log.error("invalid plugin [", name, "] schema field")
         return
@@ -131,8 +131,10 @@ local function load_plugin(name, plugins_list, plugin_type)
     end
 
     local properties = plugin.schema.properties
+    -- 注入的 schema 配置
     local plugin_injected_schema = core.schema.plugin_injected_schema
 
+    -- 检查预留属性
     if plugin.schema['$comment'] ~= plugin_injected_schema['$comment'] then
         if properties.disable then
             core.log.error("invalid plugin [", name,
@@ -145,7 +147,9 @@ local function load_plugin(name, plugins_list, plugin_type)
     end
 
     plugin.name = name
+    -- 插件的默认配置
     plugin.attr = plugin_attr(name)
+    -- 插件置入 table 中
     core.table.insert(plugins_list, plugin)
 
     if plugin.init then
@@ -171,6 +175,7 @@ local function load(plugin_names, wasm_plugin_names)
 
     core.log.warn("new plugins: ", core.json.delay_encode(processed))
 
+    -- 移除已经存在的 module
     for name, plugin in pairs(local_plugins_hash) do
         local ty = PLUGIN_TYPE_HTTP
         if plugin.type == "wasm" then
@@ -182,6 +187,7 @@ local function load(plugin_names, wasm_plugin_names)
     core.table.clear(local_plugins)
     core.table.clear(local_plugins_hash)
 
+    -- 加载插件
     for name, value in pairs(processed) do
         local ty = PLUGIN_TYPE_HTTP
         if type(value) == "table" then
@@ -191,6 +197,7 @@ local function load(plugin_names, wasm_plugin_names)
         load_plugin(name, local_plugins, ty)
     end
 
+    -- 插件排序, priority 越高的插件越先执行
     -- sort by plugin's priority
     if #local_plugins > 1 then
         sort_tab(local_plugins, sort_plugin)
@@ -366,7 +373,7 @@ function _M.filter(ctx, conf, plugins, route_conf)
 
     local route_plugin_conf = route_conf and route_conf.value.plugins
     plugins = plugins or core.tablepool.fetch("plugins", 32, 0)
-    for _, plugin_obj in ipairs(local_plugins) do
+    for _, plugin_obj in ipairs(local_plugins) do   --将本地插件和路由上启用的插件做交集  O(n)
         local name = plugin_obj.name
         local plugin_conf = user_plugin_conf[name]
 
@@ -713,7 +720,7 @@ function _M.run_plugin(phase, plugins, api_ctx)
         and phase ~= "header_filter"
         and phase ~= "body_filter"
     then
-        for i = 1, #plugins, 2 do
+        for i = 1, #plugins, 2 do                 --plugins[i + 1]是插件函数的入参 conf
             local phase_func = plugins[i][phase]
             if phase_func then
                 plugin_run = true
@@ -770,9 +777,9 @@ function _M.run_global_rules(api_ctx, global_rules, phase_name)
             api_ctx.conf_id = global_rule.value.id
 
             core.table.clear(plugins)
-            plugins = _M.filter(api_ctx, global_rule, plugins, route)
+            plugins = _M.filter(api_ctx, global_rule, plugins, route)   --返回规则对应插件
             if phase_name == nil then
-                _M.run_plugin("rewrite", plugins, api_ctx)
+                _M.run_plugin("rewrite", plugins, api_ctx)    --调用对应阶段的函数
                 _M.run_plugin("access", plugins, api_ctx)
             else
                 _M.run_plugin(phase_name, plugins, api_ctx)
